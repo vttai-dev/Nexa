@@ -1,0 +1,1704 @@
+NEXA PLATFORM - API CONTRACT CHO ANTIGRAVITY FRONTEND
+Cap nhat: 2026-09-28
+
+Muc dich:
+- File nay danh cho Antigravity/doc frontend de lam giao dien dung API backend.
+- Tat ca endpoint API chinh dung prefix: https://localhost:7210/api/v1
+- Health check KHONG dung prefix /api/v1.
+
+QUY TAC CHUNG
+1. JSON dung camelCase.
+2. Enum tra ve va gui len dang string.
+3. Dang nhap dung cookie first-party, KHONG dung JWT.
+4. Request ghi du lieu POST/PUT/DELETE can gui CSRF:
+   - Lay token: GET /api/v1/auth/csrf
+   - Header can gui: X-CSRF-TOKEN: <requestToken>
+   - Trinh duyet phai gui kem cookie.
+5. Endpoint yeu cau dang nhap can cookie session.
+6. Endpoint Admin can user co role Admin.
+7. Endpoint Moderator/Admin can role Moderator hoac Admin.
+8. List response dung dang:
+{
+  "items": [],
+  "page": 1,
+  "pageSize": 20,
+  "totalCount": 0
+}
+9. Phan trang:
+   - page mac dinh: 1
+   - pageSize mac dinh: 20
+   - pageSize toi da: 100
+10. Loi tra ve application/problem+json, vi du:
+{
+  "type": "https://tools.ietf.org/html/rfc9110#section-15.5.1",
+  "title": "Page must be 1–100000 and pageSize 1–100.",
+  "status": 400,
+  "code": "invalid_page",
+  "traceId": "..."
+}
+
+COMMON ENUMS
+ArticleStatus:
+- Draft
+- Published
+- Archived
+
+ArticleRevisionAction:
+- Created
+- Updated
+- Published
+- Archived
+- Restored
+
+NotificationType:
+- ArticleLiked
+- ArticleCommented
+- UserFollowed
+- Mentioned
+- TagPublished
+- CommentReplied
+- ArticlePublished
+
+ReportTargetType:
+- Article
+- Comment
+- User
+
+ReportReason:
+- Spam
+- Inappropriate
+- Plagiarism
+- PolicyViolation
+- Other
+
+ReportStatus:
+- Pending
+- Accepted
+- Rejected
+
+======================================================================
+1. AUTHENTICATION
+======================================================================
+
+1.1 GET /auth/csrf
+Quyen: Public
+Input:
+- Khong co body.
+Output 200:
+{
+  "requestToken": "CfDJ8...",
+  "headerName": "X-CSRF-TOKEN"
+}
+Ghi chu frontend:
+- Goi endpoint nay truoc moi luong POST/PUT/DELETE.
+- Luu requestToken de gui header X-CSRF-TOKEN.
+
+1.2 POST /auth/register
+Quyen: Public + CSRF
+Rate limit: auth
+Input body:
+{
+  "userName": "tai_dev",
+  "email": "tai@example.com",
+  "password": "StrongPassword123!",
+  "displayName": "Tai Dev",
+  "phoneNumber": "+84901234567"
+}
+Validation:
+- userName: 3-30 ky tu, chi a-z A-Z 0-9 _
+- email: toi da 254 ky tu, dung format email
+- password: 12-128 ky tu
+- displayName: toi da 100 ky tu
+- phoneNumber: tuy chon; neu nhap thi 8-32 ky tu, dung dinh dang so dien thoai
+Output 201:
+{
+  "userId": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+}
+Loi thuong gap:
+- 400 validation
+- 409 email/username trung
+- 429 rate limit
+
+1.3 POST /auth/login
+Quyen: Public + CSRF
+Rate limit: auth
+Input body:
+{
+  "email": "tai@example.com",
+  "password": "StrongPassword123!"
+}
+Output 204:
+- Khong co body.
+- Backend set cookie session.
+- Chi yeu cau verify neu AccountMessages:RequireVerifiedContacts=true.
+Ghi chu frontend:
+- Sau login nen goi lai GET /auth/csrf de lay token moi theo user da dang nhap.
+
+1.4 POST /auth/logout
+Quyen: Dang nhap + CSRF
+Input:
+- Khong co body.
+Output 204:
+- Khong co body.
+
+1.5 Xac minh email va so dien thoai (mac dinh dang tat)
+- POST /auth/email/verification { "email": "tai@example.com" }: gui lai ma email, tra 204.
+- POST /auth/email/verification/confirm { "email": "tai@example.com", "token": "..." }: xac minh email, tra 204.
+- POST /auth/phone/verification { "email": "tai@example.com" }: gui lai ma SMS, tra 204.
+- POST /auth/phone/verification/confirm { "email": "tai@example.com", "token": "123456" }: xac minh so dien thoai, tra 204.
+- API che thong tin tai khoan khong ton tai khi yeu cau gui lai ma.
+- Login chi tra 403 voi code verification_required khi AccountMessages:RequireVerifiedContacts=true.
+- Mac dinh khong gui mail/SMS va khong chan dang nhap; so dien thoai dang ky la tuy chon.
+- Development outbox la gia lap trong bo nho, khong gui ra mang; mac dinh tat va chi bat bang AccountMessages:UseDevelopmentOutbox=true.
+- Neu chua bat delivery tuong ung, endpoint gui ma tra 409 message_delivery_not_configured.
+- GET /auth/dev/outbox chi duoc map khi API Development va outbox gia lap da bat; chi chap nhan loopback.
+
+1.6 Dat lai va doi mat khau
+- POST /auth/password/forgot { "email": "tai@example.com" }: yeu cau ma dat lai, tra 204 khi email delivery da bat; mac dinh tra 409 message_delivery_not_configured.
+- POST /auth/password/reset { "email": "tai@example.com", "token": "...", "newPassword": "AnotherStrongPassword123!" }: dat lai mat khau, tra 204.
+- PUT /me/password { "currentPassword": "...", "newPassword": "..." }: doi mat khau khi da dang nhap, tra 204.
+- Chua ket noi Gmail/business email hoac nha cung cap SMS cu the. Khi co provider, cau hinh webhook HTTPS, bat EnableEmailDelivery/EnablePhoneDelivery va RequireVerifiedContacts trong AccountMessages; frontend bat NEXT_PUBLIC_ACCOUNT_VERIFICATION_ENABLED=true.
+- Khi bat RequireVerifiedContacts, API dung khi thieu provider email hoac SMS; co the dung outbox gia lap chi de test local.
+
+======================================================================
+2. ACCOUNT / PROFILE
+======================================================================
+
+2.1 GET /me
+Quyen: Dang nhap
+Input:
+- Khong co body.
+Output 200:
+{
+  "account": {
+    "id": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+    "userName": "tai_dev",
+    "email": "tai@example.com",
+    "phoneNumber": "+84901234567",
+    "emailConfirmed": true,
+    "phoneNumberConfirmed": true,
+    "roles": ["Member"]
+  },
+  "profile": {
+    "userId": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+    "userName": "tai_dev",
+    "displayName": "Tai Dev",
+    "bio": "",
+    "avatarUrl": null,
+    "websiteUrl": null
+  }
+}
+
+2.2 PUT /me/profile
+Quyen: Dang nhap + CSRF
+Input body:
+{
+  "displayName": "Tai Dev",
+  "bio": "Lap trinh .NET",
+  "avatarUrl": "https://example.com/avatar.png",
+  "websiteUrl": "https://example.com"
+}
+Validation:
+- displayName: required, toi da 100
+- bio: required, co the rong, toi da 2000
+- avatarUrl: nullable, toi da 2048
+- websiteUrl: nullable, toi da 2048
+Output 204:
+- Khong co body.
+
+2.3 GET /users/{userName}
+Quyen: Public
+Input route:
+- userName: string
+Output 200:
+{
+  "userId": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "userName": "tai_dev",
+  "displayName": "Tai Dev",
+  "bio": "Lap trinh .NET",
+  "avatarUrl": null,
+  "websiteUrl": "https://example.com"
+}
+Output 404 neu khong tim thay.
+
+======================================================================
+3. ARTICLES
+======================================================================
+
+DTO ArticleSummaryDto:
+{
+  "id": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "title": "Hoc .NET 10",
+  "slug": "hoc-dotnet-10",
+  "summary": "Tom tat ngan",
+  "authorId": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "authorName": "Tai Dev",
+  "status": "Published",
+  "publishedAtUtc": "2026-09-27T06:00:00+00:00",
+  "version": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+}
+
+DTO ArticleDto:
+{
+  "id": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "title": "Hoc .NET 10",
+  "slug": "hoc-dotnet-10",
+  "summary": "Tom tat ngan",
+  "bodyMarkdown": "# Noi dung",
+  "authorId": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "authorName": "Tai Dev",
+  "categoryId": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "tagIds": ["0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"],
+  "status": "Published",
+  "createdAtUtc": "2026-09-27T06:00:00+00:00",
+  "updatedAtUtc": "2026-09-27T06:10:00+00:00",
+  "publishedAtUtc": "2026-09-27T06:00:00+00:00",
+  "version": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "likeCount": 0,
+  "commentCount": 0,
+  "viewCount": 0
+}
+
+3.1 GET /articles
+Quyen: Public
+Query:
+- page?: number
+- pageSize?: number
+- categoryId?: guid
+- tagId?: guid
+- authorId?: guid
+Input body:
+- Khong co.
+Output 200:
+{
+  "items": [ArticleSummaryDto],
+  "page": 1,
+  "pageSize": 20,
+  "totalCount": 100
+}
+Ghi chu:
+- Chi tra bai Published.
+
+3.2 GET /articles/{slug}
+Quyen: Public
+Input route:
+- slug: string
+Output 200:
+- ArticleDto
+Output 404 neu khong co bai Published.
+
+3.3 GET /articles/{slug}/metadata
+Quyen: Public
+Output 200:
+{
+  "id": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "title": "Hoc .NET 10",
+  "slug": "hoc-dotnet-10",
+  "viewCount": 123,
+  "likeCount": 10,
+  "commentCount": 5,
+  "bookmarkCount": 7,
+  "wordCount": 1200,
+  "readingTimeMinutes": 6,
+  "updatedAtUtc": "2026-09-27T06:10:00+00:00",
+  "publishedAtUtc": "2026-09-27T06:00:00+00:00",
+  "metaTitle": null,
+  "metaDescription": null,
+  "keywords": null,
+  "canonicalUrl": null
+}
+
+3.4 POST /articles/{slug}/views
+Quyen: Public + CSRF
+Input:
+- Khong co body.
+Output 204:
+- Khong co body.
+Ghi chu:
+- Ghi tang viewCount cho bai Published.
+
+3.5 GET /me/articles
+Quyen: Dang nhap
+Query:
+- page?: number
+- pageSize?: number
+Output 200:
+{
+  "items": [ArticleSummaryDto],
+  "page": 1,
+  "pageSize": 20,
+  "totalCount": 10
+}
+Ghi chu:
+- Tra bai cua user hien tai, gom Draft/Published/Archived.
+
+3.6 GET /me/articles/{id}
+Quyen: Dang nhap, tac gia bai viet
+Input route:
+- id: guid
+Output 200:
+- ArticleDto
+
+3.7 POST /articles
+Quyen: Dang nhap + CSRF
+Input body:
+{
+  "title": "Hoc .NET 10",
+  "slug": "hoc-dotnet-10",
+  "summary": "Tom tat ngan",
+  "bodyMarkdown": "# Noi dung bai viet",
+  "categoryId": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "tagIds": ["0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"]
+}
+Validation:
+- title: required, toi da 200
+- slug: required, toi da 180, lowercase a-z 0-9 va dau gach noi
+- summary: required, co the rong, toi da 500
+- bodyMarkdown: required, co the rong khi draft, toi da 200000
+- categoryId: nullable guid
+- tagIds: required array, toi da 10 tag
+Output 201:
+{
+  "id": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "slug": "hoc-dotnet-10",
+  "version": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+}
+Header:
+- Location: /api/v1/me/articles/{id}
+Ghi chu:
+- Bai moi tao la Draft.
+
+3.8 PUT /articles/{id}
+Quyen: Dang nhap + CSRF, tac gia bai viet
+Input route:
+- id: guid
+Input body:
+{
+  "version": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "article": {
+    "title": "Hoc .NET 10 cap nhat",
+    "slug": "hoc-dotnet-10",
+    "summary": "Tom tat moi",
+    "bodyMarkdown": "# Noi dung moi",
+    "categoryId": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+    "tagIds": ["0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"]
+  }
+}
+Output 204:
+- Khong co body.
+Loi:
+- 409 neu version cu.
+Ghi chu:
+- Slug cua bai Published khong duoc doi.
+
+3.9 POST /articles/{id}/publish
+Quyen: Dang nhap + CSRF, tac gia bai viet
+Input body:
+{
+  "version": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+}
+Output 204:
+- Khong co body.
+Loi:
+- 409 neu version cu.
+- 400 neu bai khong the publish.
+
+3.10 POST /articles/{id}/archive
+Quyen: Dang nhap + CSRF, tac gia hoac Moderator/Admin
+Input body:
+{
+  "version": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+}
+Output 204.
+
+3.11 GET /me/articles/{id}/revisions
+Quyen: Dang nhap, tac gia bai viet
+Query:
+- page?: number
+- pageSize?: number
+Output 200:
+{
+  "items": [
+    {
+      "id": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+      "articleId": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+      "action": "Updated",
+      "editorId": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+      "status": "Draft",
+      "title": "Hoc .NET 10",
+      "slug": "hoc-dotnet-10",
+      "articleVersion": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+      "createdAtUtc": "2026-09-27T06:10:00+00:00"
+    }
+  ],
+  "page": 1,
+  "pageSize": 20,
+  "totalCount": 4
+}
+
+3.12 GET /me/articles/{id}/revisions/{revisionId}
+Quyen: Dang nhap, tac gia bai viet
+Output 200:
+{
+  "id": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "articleId": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "action": "Updated",
+  "editorId": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "status": "Draft",
+  "title": "Hoc .NET 10",
+  "slug": "hoc-dotnet-10",
+  "summary": "Tom tat",
+  "bodyMarkdown": "# Noi dung snapshot",
+  "categoryId": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "tagIds": ["0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"],
+  "articleVersion": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "createdAtUtc": "2026-09-27T06:10:00+00:00"
+}
+
+======================================================================
+4. COMMENTS
+======================================================================
+
+4.1 GET /articles/{id}/comments
+Quyen: Public
+Query:
+- page?: number
+- pageSize?: number
+Output 200:
+{
+  "items": [
+    {
+      "id": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+      "articleId": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+      "authorId": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+      "authorName": "Tai Dev",
+      "body": "Binh luan hay",
+      "createdAtUtc": "2026-09-27T06:00:00+00:00",
+      "updatedAtUtc": "2026-09-27T06:00:00+00:00",
+      "version": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+    }
+  ],
+  "page": 1,
+  "pageSize": 20,
+  "totalCount": 1
+}
+
+4.2 POST /articles/{id}/comments
+Quyen: Dang nhap + CSRF
+Input body:
+{
+  "body": "Binh luan hay"
+}
+Validation:
+- body: required, toi da 5000
+Output 201:
+{
+  "id": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "version": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+}
+
+4.3 PUT /comments/{id}
+Quyen: Dang nhap + CSRF, tac gia comment
+Input body:
+{
+  "version": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "body": "Noi dung cap nhat"
+}
+Output 204.
+Loi 409 neu version cu.
+
+4.4 DELETE /comments/{id}?version={version}
+Quyen: Dang nhap + CSRF, tac gia comment hoac Moderator/Admin
+Input query:
+- version: guid
+Output 204.
+
+======================================================================
+5. CATEGORIES / TAGS
+======================================================================
+
+DTO CategoryDto:
+{
+  "id": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "name": ".NET",
+  "slug": "dotnet",
+  "description": "Chu de .NET"
+}
+
+DTO TagDto:
+{
+  "id": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "name": "EF Core",
+  "slug": "ef-core"
+}
+
+DTO TagStatsDto:
+{
+  "id": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "name": "EF Core",
+  "slug": "ef-core",
+  "publishedArticleCount": 12,
+  "followerCount": 5
+}
+
+5.1 GET /categories
+Quyen: Public
+Query:
+- page?: number
+- pageSize?: number
+Output 200:
+{
+  "items": [CategoryDto],
+  "page": 1,
+  "pageSize": 20,
+  "totalCount": 5
+}
+
+5.2 POST /categories
+Quyen: Admin + CSRF
+Input body:
+{
+  "name": ".NET",
+  "slug": "dotnet",
+  "description": "Chu de .NET"
+}
+Output 201:
+{
+  "id": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+}
+
+5.3 PUT /categories/{id}
+Quyen: Admin + CSRF
+Input body:
+{
+  "name": ".NET",
+  "slug": "dotnet",
+  "description": "Chu de .NET cap nhat"
+}
+Output 204.
+
+5.4 DELETE /categories/{id}
+Quyen: Admin + CSRF
+Output 204.
+Loi 409 neu category dang duoc bai viet tham chieu.
+
+5.5 GET /tags
+Quyen: Public
+Query:
+- page?: number
+- pageSize?: number
+Output 200:
+{
+  "items": [TagDto],
+  "page": 1,
+  "pageSize": 20,
+  "totalCount": 20
+}
+
+5.6 GET /tags/popular
+Quyen: Public
+Query:
+- page?: number
+- pageSize?: number
+Output 200:
+{
+  "items": [TagStatsDto],
+  "page": 1,
+  "pageSize": 20,
+  "totalCount": 20
+}
+
+5.7 GET /tags/{id}/stats
+Quyen: Public
+Output 200:
+- TagStatsDto
+
+5.8 POST /tags
+Quyen: Admin + CSRF
+Input body:
+{
+  "name": "EF Core",
+  "slug": "ef-core"
+}
+Output 201:
+{
+  "id": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+}
+
+5.9 PUT /tags/{id}
+Quyen: Admin + CSRF
+Input body:
+{
+  "name": "EF Core",
+  "slug": "ef-core"
+}
+Output 204.
+
+5.10 DELETE /tags/{id}
+Quyen: Admin + CSRF
+Output 204.
+Loi 409 neu tag dang duoc bai viet tham chieu.
+
+======================================================================
+6. ENGAGEMENT
+======================================================================
+
+6.1 PUT /articles/{id}/like
+Quyen: Dang nhap + CSRF
+Input:
+- route id: articleId guid
+Output 204.
+Ghi chu:
+- Idempotent.
+- Neu like bai cua nguoi khac se tao notification ArticleLiked.
+
+6.2 DELETE /articles/{id}/like
+Quyen: Dang nhap + CSRF
+Output 204.
+
+6.3 PUT /articles/{id}/bookmark
+Quyen: Dang nhap + CSRF
+Output 204.
+
+6.4 DELETE /articles/{id}/bookmark
+Quyen: Dang nhap + CSRF
+Output 204.
+
+6.5 GET /me/bookmarks
+Quyen: Dang nhap
+Query:
+- page?: number
+- pageSize?: number
+Output 200:
+{
+  "items": [ArticleSummaryDto],
+  "page": 1,
+  "pageSize": 20,
+  "totalCount": 10
+}
+
+6.6 PUT /users/{id}/follow
+Quyen: Dang nhap + CSRF
+Input route:
+- id: followee userId
+Output 204.
+Ghi chu:
+- Chan tu follow chinh minh.
+- Neu follow thanh cong se tao notification UserFollowed.
+
+6.7 DELETE /users/{id}/follow
+Quyen: Dang nhap + CSRF
+Output 204.
+
+6.8 PUT /tags/{id}/follow
+Quyen: Dang nhap + CSRF
+Input route:
+- id: tagId
+Output 204.
+
+6.9 DELETE /tags/{id}/follow
+Quyen: Dang nhap + CSRF
+Output 204.
+
+6.10 GET /me/tags/following
+Quyen: Dang nhap
+Query:
+- page?: number
+- pageSize?: number
+Output 200:
+{
+  "items": [TagStatsDto],
+  "page": 1,
+  "pageSize": 20,
+  "totalCount": 5
+}
+
+======================================================================
+7. NOTIFICATIONS
+======================================================================
+
+DTO NotificationDto:
+{
+  "id": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "type": "ArticleLiked",
+  "message": "Tai Dev liked your article Hoc .NET 10.",
+  "actorId": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "actorUserName": "tai_dev",
+  "articleId": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "articleSlug": "hoc-dotnet-10",
+  "commentId": null,
+  "isRead": false,
+  "createdAtUtc": "2026-09-27T06:00:00+00:00",
+  "readAtUtc": null
+}
+
+7.1 GET /notifications
+Quyen: Dang nhap
+Query:
+- unreadOnly?: boolean
+- page?: number
+- pageSize?: number
+Output 200:
+{
+  "items": [NotificationDto],
+  "page": 1,
+  "pageSize": 20,
+  "totalCount": 3
+}
+
+7.2 GET /notifications/unread-count
+Quyen: Dang nhap
+Output 200:
+{
+  "count": 3
+}
+
+7.3 POST /notifications/{id}/read
+Quyen: Dang nhap + CSRF, notification cua user hien tai
+Output 204.
+
+7.4 POST /notifications/read-all
+Quyen: Dang nhap + CSRF
+Output 204.
+
+======================================================================
+8. SEARCH
+======================================================================
+
+8.1 GET /search
+Quyen: Public
+Rate limit: search
+Query:
+- query?: string
+- page?: number
+- pageSize?: number
+Output 200:
+{
+  "articles": {
+    "items": [
+      {
+        "id": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+        "title": "Hoc .NET 10",
+        "slug": "hoc-dotnet-10",
+        "summary": "Tom tat",
+        "authorId": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+        "authorName": "Tai Dev",
+        "publishedAtUtc": "2026-09-27T06:00:00+00:00"
+      }
+    ],
+    "page": 1,
+    "pageSize": 20,
+    "totalCount": 1
+  },
+  "users": {
+    "items": [
+      {
+        "userId": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+        "userName": "tai_dev",
+        "displayName": "Tai Dev",
+        "bio": "Lap trinh .NET",
+        "avatarUrl": null
+      }
+    ],
+    "page": 1,
+    "pageSize": 20,
+    "totalCount": 1
+  },
+  "tags": {
+    "items": [
+      {
+        "id": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+        "name": "EF Core",
+        "slug": "ef-core",
+        "articleCount": 12
+      }
+    ],
+    "page": 1,
+    "pageSize": 20,
+    "totalCount": 1
+  }
+}
+
+8.2 GET /search/articles
+Quyen: Public
+Query:
+- query?: string
+- page?: number
+- pageSize?: number
+Output 200:
+{
+  "items": [SearchArticleResultDto],
+  "page": 1,
+  "pageSize": 20,
+  "totalCount": 1
+}
+
+8.3 GET /search/users
+Quyen: Public
+Query:
+- query?: string
+- page?: number
+- pageSize?: number
+Output 200:
+{
+  "items": [SearchUserResultDto],
+  "page": 1,
+  "pageSize": 20,
+  "totalCount": 1
+}
+
+8.4 GET /search/tags
+Quyen: Public
+Query:
+- query?: string
+- page?: number
+- pageSize?: number
+Output 200:
+{
+  "items": [SearchTagResultDto],
+  "page": 1,
+  "pageSize": 20,
+  "totalCount": 1
+}
+
+======================================================================
+9. REPORT / MODERATION
+======================================================================
+
+9.1 POST /reports
+Quyen: Dang nhap + CSRF
+Input body:
+{
+  "targetType": "Article",
+  "targetId": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "reason": "Spam",
+  "details": "Noi dung spam"
+}
+Validation:
+- details: required, co the rong, toi da 2000
+Output 201:
+{
+  "id": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+}
+
+9.2 GET /moderation/reports
+Quyen: Moderator hoac Admin
+Query:
+- status?: Pending | Accepted | Rejected
+- page?: number
+- pageSize?: number
+Output 200:
+{
+  "items": [
+    {
+      "id": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+      "reporterId": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+      "reporterUserName": "tai_dev",
+      "targetType": "Article",
+      "targetId": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+      "reason": "Spam",
+      "details": "Noi dung spam",
+      "status": "Pending",
+      "createdAtUtc": "2026-09-27T06:00:00+00:00",
+      "resolvedAtUtc": null,
+      "resolvedById": null,
+      "resolutionNote": ""
+    }
+  ],
+  "page": 1,
+  "pageSize": 20,
+  "totalCount": 1
+}
+
+9.3 PUT /moderation/reports/{id}/decision
+Quyen: Moderator hoac Admin + CSRF
+Input body:
+{
+  "status": "Accepted",
+  "resolutionNote": "Da xu ly"
+}
+Validation:
+- status: Accepted hoac Rejected khi xu ly
+- resolutionNote: required, co the rong, toi da 2000
+Output 204.
+
+======================================================================
+10. ADMIN USERS
+======================================================================
+
+10.1 GET /admin/users
+Quyen: Admin
+Query:
+- page?: number
+- pageSize?: number
+- search?: string
+Output 200:
+{
+  "items": [
+    {
+      "id": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+      "userName": "tai_dev",
+      "email": "tai@example.com",
+      "roles": ["Member"],
+      "isLocked": false,
+      "lockoutEndUtc": null,
+      "createdAtUtc": "2026-09-27T06:00:00+00:00"
+    }
+  ],
+  "page": 1,
+  "pageSize": 20,
+  "totalCount": 1
+}
+
+10.2 GET /admin/users/{id}
+Quyen: Admin
+Output 200:
+{
+  "id": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "userName": "tai_dev",
+  "email": "tai@example.com",
+  "roles": ["Member"],
+  "isLocked": false,
+  "lockoutEndUtc": null,
+  "createdAtUtc": "2026-09-27T06:00:00+00:00",
+  "emailConfirmed": false,
+  "phoneNumberConfirmed": false
+}
+
+10.3 PUT /admin/users/{id}/roles
+Quyen: Admin + CSRF
+Input body:
+{
+  "roles": ["Member", "Moderator"]
+}
+Validation:
+- roles: required, toi thieu 1 role
+- role hop le: Member, Moderator, Admin
+Output 204.
+
+10.4 POST /admin/users/{id}/lock
+Quyen: Admin + CSRF
+Input body:
+{
+  "days": 30
+}
+Validation:
+- days: 1-3650
+Output 204.
+
+10.5 POST /admin/users/{id}/unlock
+Quyen: Admin + CSRF
+Input:
+- Khong co body.
+Output 204.
+
+======================================================================
+11. ADMIN AUDIT LOGS
+======================================================================
+
+11.1 GET /admin/audit-logs
+Quyen: Admin
+Query:
+- page?: number
+- pageSize?: number
+- action?: string
+- targetType?: string
+- actorId?: guid
+Output 200:
+{
+  "items": [
+    {
+      "id": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+      "actorId": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+      "actorUserName": "admin",
+      "action": "Admin.UserRolesUpdated",
+      "targetType": "User",
+      "targetId": "0199xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+      "details": "Roles updated.",
+      "ipAddress": "127.0.0.1",
+      "createdAtUtc": "2026-09-27T06:00:00+00:00"
+    }
+  ],
+  "page": 1,
+  "pageSize": 20,
+  "totalCount": 1
+}
+
+======================================================================
+12. HEALTH CHECKS
+======================================================================
+
+12.1 GET /health/live
+Quyen: Public
+Prefix:
+- Khong dung /api/v1
+Output 200 neu app song.
+
+12.2 GET /health/ready
+Quyen: Public
+Prefix:
+- Khong dung /api/v1
+Output 200 neu app ket noi PostgreSQL san sang.
+
+======================================================================
+13. LUONG FRONTEND GOI Y
+======================================================================
+
+13.1 Dang ky / dang nhap
+1. GET /auth/csrf
+2. POST /auth/register hoac POST /auth/login voi header X-CSRF-TOKEN
+3. Sau login, GET /auth/csrf lai
+4. Goi GET /me de lay user hien tai va role.
+
+13.2 Tao bai viet
+1. GET /auth/csrf
+2. GET /categories va GET /tags de lay option
+3. POST /articles tao draft
+4. GET /me/articles/{id} lay version moi neu can
+5. PUT /articles/{id} khi sua
+6. POST /articles/{id}/publish khi publish
+
+13.3 Trang chi tiet bai viet public
+1. GET /articles/{slug}
+2. GET /articles/{slug}/metadata
+3. POST /articles/{slug}/views
+4. GET /articles/{id}/comments
+5. Neu dang nhap: PUT /articles/{id}/like, bookmark, POST comment.
+
+13.4 Header notification
+1. Khi user da dang nhap: GET /notifications/unread-count
+2. Dropdown: GET /notifications?unreadOnly=true&page=1&pageSize=10
+3. Click notification: POST /notifications/{id}/read
+
+13.5 Admin
+1. GET /me de kiem tra role Admin
+2. GET /admin/users
+3. GET /admin/audit-logs
+4. GET /moderation/reports
+
+======================================================================
+14. CAC CHUC NANG CON HOAN / GHI CHU CHO FRONTEND
+======================================================================
+
+- Luong email/SMS va reset password da co ma nguon nhung mac dinh dang tat cho den khi ket noi nha cung cap that.
+- Chua co GitHub/OAuth login (tam hoan).
+- Upload anh va tai lieu da co qua local storage; can cau hinh storage cloud neu production.
+- Frontend Next.js da co; xem route trong muc 15 va chuc nang da co.
+- Chua co subscription/VIP/payment.
+- Compare diff va restore article revision da co.
+- Da co mention notification khi comment voi @userName.
+- Da co feed bai moi tu tag/user dang follow: GET /me/feed.
+
+======================================================================
+15. API MOI BO SUNG
+======================================================================
+
+15.1 GET /me/stats
+Quyen: Dang nhap
+Output 200:
+{
+  "articles": 3,
+  "publishedArticles": 2,
+  "draftArticles": 1,
+  "bookmarks": 5,
+  "notifications": 4,
+  "unreadNotifications": 2,
+  "views": 120,
+  "likes": 10,
+  "comments": 8,
+  "followingUsers": 3,
+  "followers": 7,
+  "followingTags": 4
+}
+
+15.2 GET /admin/stats
+Quyen: Admin
+Output 200: tong user, article, comment, report, notification, view, like, bookmark, follow.
+
+15.3 GET /articles/popular
+Quyen: Public
+Query: page?, pageSize?
+Output 200: PagedResult<ArticleSummaryDto>. Sap xep theo diem view/like/comment/bookmark.
+
+15.4 GET /users/{userName}/articles
+Quyen: Public
+Query: page?, pageSize?
+Output 200: PagedResult<ArticleSummaryDto> cac bai da publish cua user.
+
+15.5 GET /me/feed
+Quyen: Dang nhap
+Query: page?, pageSize?
+Output 200: PagedResult<ArticleSummaryDto> tu tac gia/tag dang follow.
+
+15.6 GET /articles/{slug}/related
+Quyen: Public
+Query: page?, pageSize?
+Output 200: PagedResult<ArticleSummaryDto> bai cung category/tag.
+
+15.7 GET /articles/slug-availability/{slug}
+Quyen: Dang nhap
+Query:
+- exceptArticleId?: guid (dung khi sua bai, bo qua bai hien tai)
+Output 200:
+{
+  "slug": "ten-bai-viet",
+  "available": true
+}
+
+15.8 POST /me/articles/{id}/revisions/{revisionId}/restore
+Quyen: Dang nhap, tac gia bai viet
+Input body:
+{
+  "version": "guid-version-hien-tai-cua-article"
+}
+Output 204. Khoi phuc title/slug/summary/body/category/tags tu revision.
+
+15.9 GET /admin/comments
+Quyen: Admin/Moderator
+Query: page?, pageSize?
+Output 200: PagedResult<CommentDto> comment moi nhat chua bi xoa.
+
+15.10 Mention notification
+Khi POST /articles/{id}/comments voi body co @userName, he thong tu tao notification type Mentioned cho user duoc nhac ten.
+Khong can frontend goi API rieng.
+15.11 GET /admin/articles
+Quyen: Admin/Moderator
+Query:
+- page?: number
+- pageSize?: number
+- status?: Draft | Published | Archived
+Output 200: PagedResult<ArticleSummaryDto> gom ca draft/published/archived tuy filter.
+
+15.12 GET /admin/articles/{id}
+Quyen: Admin/Moderator
+Output 200: ArticleDto cua bat ky bai viet nao, ke ca draft/archived.
+
+15.13 GET /categories/popular
+Quyen: Public
+Query: page?, pageSize?
+Output 200: PagedResult<CategoryStatsDto>:
+{
+  "items": [
+    {
+      "id": "guid",
+      "name": "Backend",
+      "slug": "backend",
+      "description": "...",
+      "publishedArticleCount": 12
+    }
+  ],
+  "page": 1,
+  "pageSize": 20,
+  "totalCount": 1
+}
+
+15.14 GET /categories/{id}/stats
+Quyen: Public
+Output 200: CategoryStatsDto.
+15.15 GET /users/{userName}/stats
+Quyen: Public
+Output 200:
+{
+  "userId": "guid",
+  "userName": "admin",
+  "publishedArticles": 2,
+  "followers": 7,
+  "followingUsers": 3,
+  "followingTags": 4
+}
+15.16 GET /users/{userName}/followers
+Quyen: Public
+Query: page?, pageSize?
+Output 200: PagedResult<PublicFollowDto>:
+{
+  "items": [
+    {
+      "userId": "guid",
+      "userName": "alice",
+      "displayName": "Alice",
+      "avatarUrl": "/uploads/images/2026/09/avatar.png",
+      "followedAtUtc": "2026-09-28T10:00:00+00:00"
+    }
+  ],
+  "page": 1,
+  "pageSize": 20,
+  "totalCount": 1
+}
+
+15.17 GET /users/{userName}/following
+Quyen: Public
+Query: page?, pageSize?
+Output 200: PagedResult<PublicFollowDto> nguoi user dang theo doi.
+
+15.18 GET /articles/{id}/engagement
+Quyen: Dang nhap
+Output 200:
+{
+  "articleId": "guid",
+  "liked": true,
+  "bookmarked": false
+}
+
+15.19 GET /users/{id}/follow-state
+Quyen: Dang nhap
+Output 200:
+{
+  "targetId": "guid",
+  "following": true
+}
+
+15.20 GET /tags/{id}/follow-state
+Quyen: Dang nhap
+Output 200:
+{
+  "targetId": "guid",
+  "following": true
+}
+
+15.21 POST /media/images
+Quyen: Dang nhap + CSRF
+Content-Type: multipart/form-data
+Input:
+- file: image JPG/PNG/WEBP/GIF, toi da 5 MB
+Output 201:
+{
+  "url": "/uploads/images/2026/09/abc.webp",
+  "fileName": "original.webp",
+  "contentType": "image/webp",
+  "sizeBytes": 12345
+}
+Ghi chu: URL tra ve la static file tu API host, co the dung cho avatarUrl hoac anh trong body bai viet.
+15.22 GET /moderation/reports/summary
+Quyen: Admin/Moderator
+Output 200:
+{
+  "pending": 3,
+  "accepted": 1,
+  "rejected": 2,
+  "total": 6
+}
+
+15.23 GET /moderation/reports/{id}
+Quyen: Admin/Moderator
+Output 200: ReportDto.
+
+15.24 GET /search/suggestions
+Quyen: Public
+Query:
+- query: string, 2-100 ky tu
+Output 200:
+{
+  "items": [
+    { "type": "article", "label": "Tieu de", "value": "slug", "url": "/articles/slug" },
+    { "type": "user", "label": "Admin", "value": "admin", "url": "/users/admin" },
+    { "type": "tag", "label": "CSharp", "value": "csharp", "url": "/tags/csharp" }
+  ]
+}
+
+15.25 GET /categories/by-slug/{slug}
+Quyen: Public
+Output 200: CategoryStatsDto.
+
+15.26 GET /tags/by-slug/{slug}
+Quyen: Public
+Output 200: TagStatsDto.
+
+15.27 DELETE /notifications/{id}
+Quyen: Dang nhap + CSRF
+Output 204.
+
+15.28 DELETE /notifications/read
+Quyen: Dang nhap + CSRF
+Output 200:
+{
+  "count": 5
+}
+
+15.29 GET /categories/slug-availability/{slug}
+Quyen: Admin
+Query:
+- exceptId?: guid
+Output 200:
+{
+  "slug": "backend",
+  "available": true
+}
+
+15.30 GET /tags/slug-availability/{slug}
+Quyen: Admin
+Query:
+- exceptId?: guid
+Output 200:
+{
+  "slug": "csharp",
+  "available": true
+}
+
+15.31 GET /me/articles
+Cap nhat query moi:
+- status?: Draft | Published | Archived
+Van giu page/pageSize nhu cu.
+
+15.32 GET /me/comments
+Quyen: Dang nhap
+Query: page?, pageSize?
+Output 200: PagedResult<CommentDto> cac comment cua user hien tai.
+15.33 GET /me/likes
+Quyen: Dang nhap
+Query: page?, pageSize?
+Output 200: PagedResult<ArticleSummaryDto> cac bai user hien tai da like.
+15.34 GET /articles
+Cap nhat query moi:
+- publishedFromUtc?: ISO datetime
+- publishedToUtc?: ISO datetime
+Dung cho loc archive theo ngay/thang.
+
+15.35 GET /articles/archive-months
+Quyen: Public
+Output 200:
+[
+  { "year": 2026, "month": 9, "count": 12 }
+]
+
+15.36 GET /admin/users/{id}/activity
+Quyen: Admin
+Output 200:
+{
+  "userId": "guid",
+  "articles": 3,
+  "publishedArticles": 2,
+  "comments": 4,
+  "likesGiven": 10,
+  "bookmarks": 5,
+  "followers": 7,
+  "followingUsers": 2,
+  "followingTags": 3,
+  "reportsCreated": 1,
+  "reportsAgainstUser": 0
+}
+15.37 GET /admin/comments
+Cap nhat query moi:
+- articleId?: guid
+- authorId?: guid
+Van giu page/pageSize.
+
+15.38 GET /moderation/reports
+Cap nhat query moi:
+- targetType?: Article | Comment | User
+- targetId?: guid
+Van giu status/page/pageSize.
+
+15.39 GET /me/reports
+Quyen: Dang nhap
+Query: page?, pageSize?
+Output 200: PagedResult<ReportDto> cac report user hien tai da gui.
+
+15.40 GET /articles/{slug}/comments
+Quyen: Public
+Query: page?, pageSize?
+Output 200: PagedResult<CommentDto>. Dung cho trang chi tiet bai viet khi frontend chi co slug.
+15.41 GET /categories/{slug}/articles
+Quyen: Public
+Query: page?, pageSize?
+Output 200: PagedResult<ArticleSummaryDto> cac bai published trong category slug.
+
+15.42 GET /tags/{slug}/articles
+Quyen: Public
+Query: page?, pageSize?
+Output 200: PagedResult<ArticleSummaryDto> cac bai published co tag slug.
+
+15.43 POST /articles/{slug}/comments
+Quyen: Dang nhap + CSRF
+Input body:
+{
+  "body": "Noi dung comment @userName"
+}
+Output 201: CreatedCommentDto.
+
+15.44 GET /moderation/reports/{id}/target
+Quyen: Admin/Moderator
+Output 200:
+{
+  "targetType": "Article",
+  "targetId": "guid",
+  "label": "Tieu de hoac ten/comment preview",
+  "url": "/articles/slug"
+}
+
+15.45 GET /admin/recent-activity
+Quyen: Admin
+Query:
+- take?: number 1-20, mac dinh 5
+Output 200: users/articles/comments/reports moi nhat cho dashboard.
+
+15.46 GET /auth/availability/user-name/{userName}
+Quyen: Public
+Output 200:
+{
+  "field": "userName",
+  "value": "admin",
+  "available": false
+}
+
+15.47 GET /auth/availability/email?email=a@b.com
+Quyen: Public
+Output 200:
+{
+  "field": "email",
+  "value": "a@b.com",
+  "available": true
+}
+
+15.48 GET /me/articles/{id}/revisions/{fromRevisionId}/compare/{toRevisionId}
+Quyen: Dang nhap, tac gia bai viet
+Output 200:
+{
+  "from": { "...": "ArticleRevisionDto" },
+  "to": { "...": "ArticleRevisionDto" },
+  "titleChanged": true,
+  "slugChanged": false,
+  "summaryChanged": true,
+  "bodyChanged": true,
+  "categoryChanged": false,
+  "tagsChanged": true
+}
+15.49 PUT /me/password
+Quyen: Dang nhap + CSRF
+Input body:
+{
+  "currentPassword": "OldPassword123!",
+  "newPassword": "NewPassword123!"
+}
+Output 204.
+Ghi chu: day la doi mat khau khi da dang nhap, khong phai reset password.
+
+15.50 PUT /articles/{slug}/like
+Quyen: Dang nhap + CSRF
+Output 204. Tuong duong like bang article id nhung dung slug.
+
+15.51 DELETE /articles/{slug}/like
+Quyen: Dang nhap + CSRF
+Output 204.
+
+15.52 PUT /articles/{slug}/bookmark
+Quyen: Dang nhap + CSRF
+Output 204.
+
+15.53 DELETE /articles/{slug}/bookmark
+Quyen: Dang nhap + CSRF
+Output 204.
+
+15.54 GET /articles/{slug}/engagement
+Quyen: Dang nhap
+Output 200:
+{
+  "articleId": "guid",
+  "liked": true,
+  "bookmarked": false
+}
+15.55 PUT /users/{userName}/follow
+Quyen: Dang nhap + CSRF
+Output 204. Follow user bang userName.
+
+15.56 DELETE /users/{userName}/follow
+Quyen: Dang nhap + CSRF
+Output 204.
+
+15.57 GET /users/{userName}/follow-state
+Quyen: Dang nhap
+Output 200:
+{
+  "targetId": "guid-user-id",
+  "following": true
+}
+
+15.58 PUT /tags/{slug}/follow
+Quyen: Dang nhap + CSRF
+Output 204. Follow tag bang slug.
+
+15.59 DELETE /tags/{slug}/follow
+Quyen: Dang nhap + CSRF
+Output 204.
+
+15.60 GET /tags/{slug}/follow-state
+Quyen: Dang nhap
+Output 200:
+{
+  "targetId": "guid-tag-id",
+  "following": true
+}
+
+15.61 PUT /me/articles/{id}/autosave
+Quyen: Dang nhap, tac gia bai viet + CSRF
+Input body:
+{
+  "version": "guid-version-hien-tai",
+  "article": {
+    "title": "Tieu de",
+    "slug": "tieu-de",
+    "summary": "Tom tat",
+    "bodyMarkdown": "Noi dung Markdown dang soan",
+    "categoryId": null,
+    "tagIds": []
+  }
+}
+Output 200:
+{
+  "id": "guid-article",
+  "version": "guid-version-moi",
+  "savedAtUtc": "2026-09-28T12:00:00Z"
+}
+Ghi chu: Chi hoat dong voi Draft; khong tao revision moi moi lan tu dong luu. Client cap nhat version tu output cho lan luu tiep theo; version cu tra loi 409.
+
+15.62 POST /articles/{slug}/comments hoac POST /articles/{id}/comments
+Quyen: Dang nhap + CSRF
+Input body:
+{
+  "body": "Noi dung binh luan",
+  "parentCommentId": null
+}
+parentCommentId co the la ID cua mot comment goc trong cung bai viet de tao reply.
+Output 201:
+{
+  "id": "guid-comment",
+  "version": "guid-version"
+}
+Reply chi duoc mot cap; he thong gui notification CommentReplied cho tac gia comment goc.
+
+15.63 GET /comments/{id}/replies?page=1&pageSize=20
+Quyen: Public, bai viet phai Published va id phai la comment goc
+Output 200: PagedResult<CommentDto>; moi CommentDto co parentCommentId.
+
+15.64 GET /me/media?page=1&pageSize=20
+Quyen: Dang nhap
+Output 200: PagedResult<MediaAssetDto> chi gom file cua user hien tai.
+MediaAssetDto: { "id": "guid", "url": "/uploads/images/...", "fileName": "image.png", "contentType": "image/png", "sizeBytes": 12345, "createdAtUtc": "2026-09-28T12:00:00Z" }
+
+15.65 POST /media/images
+Quyen: Dang nhap + CSRF; multipart/form-data field `file`; JPG/PNG/WEBP/GIF toi da 5 MB.
+Output 201: MediaAssetDto, gom id de xoa/quyet dinh file sau nay.
+
+15.66 DELETE /media/{id}
+Quyen: Dang nhap + CSRF; chi chu so huu xoa duoc media.
+Output 204. Xoa ca metadata va file local.
+
+15.67 POST /me/series
+Quyen: Dang nhap + CSRF
+Input: { "title": "Hoc PostgreSQL", "slug": "hoc-postgresql", "description": "Lo trinh bai viet" }
+Output 201: ArticleSeriesSummaryDto.
+
+15.68 GET /me/series?page=1&pageSize=20
+Quyen: Dang nhap
+Output 200: PagedResult<ArticleSeriesSummaryDto> cua user hien tai.
+
+15.69 PUT /me/series/{id}
+Quyen: Dang nhap + CSRF, chu so huu
+Input: cung ArticleSeriesInput; Output 204.
+
+15.70 DELETE /me/series/{id}
+Quyen: Dang nhap + CSRF, chu so huu
+Output 204, xoa series va cac lien ket; khong xoa bai viet.
+
+15.71 PUT /me/series/{id}/articles/{articleId}
+Quyen: Dang nhap + CSRF, chu series va tac gia bai Published
+Output 204. Them idempotent, toi da 100 bai trong series.
+
+15.72 DELETE /me/series/{id}/articles/{articleId}
+Quyen: Dang nhap + CSRF, chu series
+Output 204; tu dong danh lai thu tu.
+
+15.73 PUT /me/series/{id}/articles/order
+Quyen: Dang nhap + CSRF, chu series
+Input: { "articleIds": ["guid-1", "guid-2"] }; phai gom dung moi bai trong series mot lan.
+Output 204.
+
+15.74 GET /series/{slug}
+Quyen: Public
+Output 200: ArticleSeriesDto gom thong tin tac gia va danh sach bai Published theo thu tu.
+
+15.75 GET /users/{userName}/series?page=1&pageSize=20
+Quyen: Public
+Output 200: PagedResult<ArticleSeriesSummaryDto>; chi hien series co it nhat mot bai Published.
+
+15.76 GET /me/articles/{id}/seo
+Quyen: Dang nhap, tac gia bai viet
+Output 200: ArticleSeoDto.
+
+15.77 PUT /me/articles/{id}/seo
+Quyen: Dang nhap, tac gia bai viet + CSRF
+Input: { "version": "guid", "metaTitle": "Tieu de SEO", "metaDescription": "Mo ta SEO", "keywords": "dotnet, postgres", "canonicalUrl": "https://example.com/article" }
+Output 200: ArticleSeoDto voi version moi; version cu tra loi 409. canonicalUrl co the null, neu co phai la URL HTTP/HTTPS absolute.
+
+15.78 GET /users/{userName}/reputation
+Quyen: Public
+Output 200: PublicReputationDto gom so bai Published, likes/comments nhan, contributionScore va level.
+
+15.79 GET /contributors/top?take=20
+Quyen: Public
+take mac dinh 20, toi da 50. Chi hien user co it nhat mot bai Published.
+Output 200: mang PublicReputationDto, sap xep theo contributionScore giam dan.
+Cong thuc diem hien tai: bai Published +10, like nhan +1, comment nhan tren bai Published +2. Level: Newbie <50, Contributor 50-249, Expert >=250.
+
+15.80 GET /tags/trending?days=7&page=1&pageSize=20
+Quyen: Public
+days mac dinh 7, cho phep 1-90; chi tra tag co bai Published trong khoang thoi gian.
+Output 200: PagedResult<TagTrendDto>, gom PublishedArticleCount trong khoang days va FollowerCount.
+
+15.81 POST /me/articles/{articleId}/reviews
+Quyen: Dang nhap + CSRF, tac gia bai Draft
+Input: { "version": "guid", "note": "Ghi chu cho moderator" }; note co the null, toi da 2000 ky tu.
+Output 201: ArticleReviewDto. Bai phai co noi dung va version phai khop; neu bai da co review Pending hoac version cu tra 409.
+Trong luc Pending, cac API sua bai/autosave/SEO/publish/archive/restore bi tu choi voi 409 review_pending.
+
+15.82 GET /me/articles/{articleId}/reviews?page=1&pageSize=20
+Quyen: Dang nhap, tac gia bai
+Output 200: PagedResult<ArticleReviewDto>, lich su submit/reject/withdraw/approve cua bai.
+
+15.83 DELETE /me/article-reviews/{reviewId}
+Quyen: Dang nhap + CSRF, tac gia va yeu cau dang Pending
+Output 204; dong yeu cau voi trang thai Withdrawn, khong xoa lich su.
+
+15.84 GET /moderation/article-reviews?status=Pending&page=1&pageSize=20
+Quyen: Moderator/Admin + dang nhap
+status mac dinh Pending; co the loc Pending, Approved, Rejected, Withdrawn.
+Output 200: PagedResult<ArticleReviewQueueItemDto> theo thu tu yeu cau cu nhat truoc. Lay bai viet day du qua GET /admin/articles/{articleId}.
+
+15.85 GET /moderation/article-reviews/{reviewId}
+Quyen: Moderator/Admin + dang nhap
+Output 200: ArticleReviewQueueItemDto.
+
+15.86 PUT /moderation/article-reviews/{reviewId}/decision
+Quyen: Moderator/Admin + dang nhap + CSRF
+Input: { "status": "Approved" | "Rejected", "note": "Ly do/phan hoi" }; note co the null, toi da 2000 ky tu.
+Output 204. Chi review Pending moi duoc quyet dinh. Approved se publish bai, tao revision va thong bao follower trong cung transaction; Rejected giu bai o Draft de tac gia sua va gui lai. Version bai khong khop tra 409.
+
+15.87 GET /articles/featured?page=1&pageSize=20
+Quyen: Public
+Output 200: PagedResult<ArticleSummaryDto>; bai Published duoc moderator/Admin gan noi bat.
+
+15.88 GET /articles/trending?days=7&page=1&pageSize=20
+Quyen: Public
+days mac dinh 7, cho phep 1-90. Xep hang theo luot xem va like/comment/bookmark trong cua so thoi gian (view count hien la tong tich luy).
+Output 200: PagedResult<ArticleSummaryDto>.
+
+15.89 GET /me/recommendations?page=1&pageSize=20
+Quyen: Dang nhap
+Output 200: PagedResult<ArticleSummaryDto>; uu tien tac gia/tag dang theo doi, bo qua bai cua minh va bai da like/bookmark, fallback bang muc do tuong tac.
+
+15.90 PUT /admin/articles/{id}/featured
+Quyen: Moderator/Admin + dang nhap + CSRF
+Output 204; chi bai Published moi duoc gan noi bat; ghi audit log.
+
+15.91 DELETE /admin/articles/{id}/featured
+Quyen: Moderator/Admin + dang nhap + CSRF
+Output 204; bo noi bat va ghi audit log.
+
+15.92 POST /media/files
+Quyen: Dang nhap + CSRF; multipart/form-data, field file.
+Cho phep PDF/TXT/CSV/DOCX/XLSX/PPTX toi da 25 MB. Output 201: MediaAssetDto; file nam trong local static storage, co the xem/click qua Url tra ve.
+
+15.93 PUT /me/profile
+Quyen: Dang nhap + CSRF
+Ngoai displayName/bio/avatarUrl/websiteUrl, request chap nhan coverImageUrl, gitHubUrl, linkedInUrl, company va skills (toi da 20 muc, moi muc toi da 50 ky tu).
+Truong mo rong bi bo qua hoac null thi giu gia tri hien tai; gui chuoi rong de xoa URL/company, gui skills: [] de xoa danh sach.
+GET /me va GET /users/{userName} tra ProfileDto gom cac truong mo rong nay.

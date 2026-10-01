@@ -1,0 +1,566 @@
+NEXA.PLATFORM - CHUC NANG DA CO
+Cap nhat: 2026-09-28
+
+1. Kien truc du an
+- Solution .NET 10 theo Clean Architecture.
+- Cac project backend:
+  - Nexa.Domain: entity va rule nghiep vu.
+  - Nexa.Application: use case, handler, contract, abstraction.
+  - Nexa.Identity: user, role, cookie auth, ASP.NET Core Identity.
+  - Nexa.Infrastructure: EF Core, PostgreSQL, repository, migration, seed data.
+  - Nexa.Api: Minimal API, DI composition root, health check, OpenAPI.
+- Frontend Next.js nam trong thu muc nexa-web, da co trang cong dong, bai viet, dashboard tac gia va admin co ban.
+
+2. Database va ha tang
+- PostgreSQL lam database chinh.
+- EF Core DbContext: NexaDbContext.
+- Migration dau tien: InitialCreate.
+- Docker Compose cho PostgreSQL local.
+- Script khoi tao moi truong development: scripts/Initialize-Development.ps1.
+- Health checks:
+  - /health/live
+  - /health/ready
+- Seed role mac dinh:
+  - Member
+  - Moderator
+  - Admin
+- Co lenh migrate/seed/bootstrap admin qua CLI.
+
+3. Bao mat nen tang
+- Dang nhap bang cookie first-party.
+- Cookie session dung prefix __Host-Nexa.Session.
+- CSRF protection cho cac request ghi du lieu.
+- Endpoint lay CSRF token:
+  - GET /api/v1/auth/csrf
+- Rate limit cho dang ky/dang nhap.
+- HTTPS local profile.
+- Khong dung JWT o giai doan nay.
+- Dang ky can email lam tai khoan; so dien thoai tuy chon. Khong chan dang nhap khi chua co provider.
+- Email/SMS verification va reset token da co ma nguon nhung mac dinh tat; outbox gia lap cung tat, khong gui Gmail/SMS that.
+- Khi co nha cung cap email business va SMS, cau hinh HTTPS webhook, bat AccountMessages:EnableEmailDelivery, EnablePhoneDelivery, RequireVerifiedContacts va frontend flag tuong ung.
+- Chua co dang nhap GitHub/OAuth.
+- Co endpoint forgot/reset bang Identity token; forgot mail chi hoat dong khi email delivery duoc bat. Doi mat khau da dang nhap luon dung duoc.
+
+4. Tai khoan va ho so
+- Dang ky tai khoan local:
+  - POST /api/v1/auth/register
+- Dang nhap:
+  - POST /api/v1/auth/login
+- Dang xuat:
+  - POST /api/v1/auth/logout
+- Lay thong tin tai khoan hien tai:
+  - GET /api/v1/me
+- Cap nhat ho so ca nhan:
+  - PUT /api/v1/me/profile
+- Doi mat khau:
+  - PUT /api/v1/me/password
+- Xem ho so public theo username:
+  - GET /api/v1/users/{userName}
+- Khi dang ky thanh cong:
+  - Tao Identity User.
+  - Tao Profile.
+  - Gan role Member mac dinh.
+- Username unique.
+- Email unique khong phan biet hoa thuong.
+- Mat khau toi thieu 12 ky tu theo chinh sach Identity.
+
+5. Role va phan quyen
+- Role hien co:
+  - Member
+  - Moderator
+  - Admin
+- User dang ky binh thuong chi co role Member.
+- Admin duoc cap bang command bootstrap local, khong co API public de tu nang quyen.
+- Admin co quyen quan ly taxonomy: category va tag.
+- Moderator/Admin co quyen moderation mot so noi dung.
+
+6. Bai viet
+- Entity Article da co cac trang thai:
+  - Draft
+  - Published
+  - Archived
+- Tao bai viet draft:
+  - POST /api/v1/articles
+- Cap nhat bai viet:
+  - PUT /api/v1/articles/{id}
+- Xuat ban bai viet:
+  - POST /api/v1/articles/{id}/publish
+- Luu tru/an bai viet:
+  - POST /api/v1/articles/{id}/archive
+- Danh sach bai viet public:
+  - GET /api/v1/articles
+- Xem bai viet public theo slug:
+  - GET /api/v1/articles/{slug}
+- Danh sach bai viet cua minh:
+  - GET /api/v1/me/articles
+- Chi tiet bai viet cua minh:
+  - GET /api/v1/me/articles/{id}
+- Bai moi tao la Draft.
+- Draft chi tac gia xem duoc qua endpoint /me/articles.
+- Public API chi hien bai Published.
+- Archived an khoi public feed.
+- Khong co xoa cung bai viet.
+- Co optimistic concurrency bang Version.
+- Version cu tra loi 409.
+- Article body luu Markdown, chua render HTML.
+- Co Article Series/collection: chu bai Published co the tao series, them/xoa bai va sap xep thu tu; series public theo slug.
+- Metadata bai viet giai doan 1:
+  - GET /api/v1/articles/{slug}/metadata
+  - POST /api/v1/articles/{slug}/views
+  - View count.
+  - Like count.
+  - Comment count.
+  - Bookmark count.
+  - Word count.
+  - Reading time du kien.
+  - PublishedAt/UpdatedAt.
+- Article Revision giai doan 1:
+  - Tu dong tao snapshot khi tao bai, sua bai, publish va archive.
+  - GET /api/v1/me/articles/{id}/revisions
+  - GET /api/v1/me/articles/{id}/revisions/{revisionId}
+  - Luu title, slug, summary, body markdown, category, tag, status, version, editor va thoi gian.
+  - Chua co compare diff va restore revision.
+  - Autosave ban nhap qua PUT /api/v1/me/articles/{id}/autosave, chi danh cho tac gia va bai Draft.
+  - Autosave kiem tra optimistic concurrency va khong tao revision moi moi lan luu.
+
+7. Danh muc va tag
+- Danh sach category public:
+  - GET /api/v1/categories
+- Tao category:
+  - POST /api/v1/categories
+- Cap nhat category:
+  - PUT /api/v1/categories/{id}
+- Xoa category:
+  - DELETE /api/v1/categories/{id}
+- Danh sach tag public:
+  - GET /api/v1/tags
+- Danh sach tag pho bien:
+  - GET /api/v1/tags/popular
+- Thong ke tag:
+  - GET /api/v1/tags/{id}/stats
+- Tao tag:
+  - POST /api/v1/tags
+- Cap nhat tag:
+  - PUT /api/v1/tags/{id}
+- Xoa tag:
+  - DELETE /api/v1/tags/{id}
+- Tao/sua/xoa category va tag yeu cau role Admin.
+- Category/tag dang duoc su dung se bi chan xoa bang constraint/repository logic.
+- Tag stats hien co so bai Published theo tung tag.
+
+8. Binh luan
+- Danh sach comment cua bai viet:
+  - GET /api/v1/articles/{id}/comments
+- Tao comment:
+  - POST /api/v1/articles/{id}/comments
+- Sua comment:
+  - PUT /api/v1/comments/{id}
+- Xoa comment mem:
+  - DELETE /api/v1/comments/{id}?version={version}
+- Comment co the reply mot cap, khong ho tro reply long nhau.
+- API replies: GET /api/v1/comments/{id}/replies; notification CommentReplied gui toi tac gia comment goc.
+- Body comment la plain text.
+- Tac gia comment duoc sua/xoa comment cua minh.
+- Moderator/Admin co the xoa comment cua nguoi khac.
+- Co optimistic concurrency bang Version.
+
+9. Tuong tac xa hoi
+- Like bai viet:
+  - PUT /api/v1/articles/{id}/like
+- Bo like:
+  - DELETE /api/v1/articles/{id}/like
+- Bookmark bai viet:
+  - PUT /api/v1/articles/{id}/bookmark
+- Bo bookmark:
+  - DELETE /api/v1/articles/{id}/bookmark
+- Danh sach bookmark cua minh:
+  - GET /api/v1/me/bookmarks
+- Follow user:
+  - PUT /api/v1/users/{id}/follow
+- Bo follow:
+  - DELETE /api/v1/users/{id}/follow
+- Follow tag:
+  - PUT /api/v1/tags/{id}/follow
+- Bo follow tag:
+  - DELETE /api/v1/tags/{id}/follow
+- Danh sach tag dang theo doi:
+  - GET /api/v1/me/tags/following
+- Like/bookmark/follow idempotent.
+- Chan tu follow chinh minh.
+- Bookmark la rieng tu, chi user hien tai xem duoc.
+
+9.1. Thong bao
+- Da co Notification System giai doan 1.
+- Tu dong tao thong bao khi:
+  - Co nguoi like bai viet cua minh.
+  - Co nguoi comment vao bai viet cua minh.
+  - Co nguoi follow minh.
+  - Co bai Published moi tu tac gia hoac tag user dang theo doi.
+  - Co nguoi reply comment goc cua minh.
+- Khong tao thong bao cho hanh dong cua chinh minh.
+- Cac loai notification hien co:
+  - ArticleLiked
+  - ArticleCommented
+  - UserFollowed
+  - Mentioned
+  - TagPublished
+  - CommentReplied
+- API thong bao:
+  - GET /api/v1/notifications
+  - GET /api/v1/notifications?unreadOnly=true
+  - GET /api/v1/notifications/unread-count
+  - POST /api/v1/notifications/{id}/read
+  - POST /api/v1/notifications/read-all
+- Co trang thai da doc/chua doc va thoi gian doc.
+
+10. Phan trang va truy van
+- Page mac dinh: 1.
+- PageSize mac dinh: 20.
+- PageSize toi da: 100.
+- Page toi da: 100000.
+- Cac response list co:
+  - items
+  - page
+  - pageSize
+  - totalCount
+- Article feed co filter:
+  - categoryId
+  - tagId
+  - authorId
+- Search API da co:
+  - GET /api/v1/search
+  - GET /api/v1/search/articles
+  - GET /api/v1/search/users
+  - GET /api/v1/search/tags
+- Search hien tim bai Published theo title, summary, body; tim user theo username, display name, bio; tim tag theo name, slug.
+- Tim bai Published dung PostgreSQL full-text search, xep hang theo muc do lien quan va co GIN expression index.
+- Search co rate limit rieng.
+
+11. Error handling
+- Dung application/problem+json.
+- Loi co traceId.
+- Loi nghiep vu thuong co code.
+- Mapping chinh:
+  - 400: input/CSRF/domain validation.
+  - 401: chua dang nhap hoac login sai.
+  - 403: thieu quyen.
+  - 404: khong tim thay/khong duoc doc.
+  - 409: trung unique, stale version, dang duoc tham chieu.
+  - 429: bi rate limit.
+- PostgreSQL unique/foreign key/check violation duoc map sang response phu hop.
+
+12. API Admin hien co
+- Da co module /admin rieng cho API quan tri backend.
+- Frontend admin co dashboard so lieu, danh sach user, category/tag, moderation reports, audit logs va hang cho duyet bai.
+- Da co API quan ly user/role/khoa tai khoan.
+- Da co cac endpoint yeu cau Admin:
+  - POST /api/v1/categories
+  - PUT /api/v1/categories/{id}
+  - DELETE /api/v1/categories/{id}
+  - POST /api/v1/tags
+  - PUT /api/v1/tags/{id}
+  - DELETE /api/v1/tags/{id}
+- Da co moderation bang role Moderator/Admin:
+  - Archive bai viet cua nguoi khac neu co quyen.
+  - Xoa comment cua nguoi khac neu co quyen.
+- Da co cac endpoint Admin moi:
+  - GET /api/v1/admin/users
+  - GET /api/v1/admin/users/{id}
+  - PUT /api/v1/admin/users/{id}/roles
+  - POST /api/v1/admin/users/{id}/lock
+  - POST /api/v1/admin/users/{id}/unlock
+  - GET /api/v1/admin/audit-logs
+
+13. Audit Log hien co
+- Luu audit log cho thao tac quan tri/moderation quan trong:
+  - Doi role user.
+  - Khoa/mo khoa user.
+  - Tao/sua/xoa category.
+  - Tao/sua/xoa tag.
+  - Xu ly report.
+- Thong tin audit:
+  - Actor.
+  - Action.
+  - Target type.
+  - Target id.
+  - Details.
+  - IP address.
+  - Thoi gian.
+- Admin xem audit:
+  - GET /api/v1/admin/audit-logs
+
+14. Report System hien co
+- User dang nhap co the bao cao noi dung:
+  - POST /api/v1/reports
+- Target report:
+  - Article
+  - Comment
+  - User
+- Ly do report:
+  - Spam
+  - Inappropriate
+  - Plagiarism
+  - PolicyViolation
+  - Other
+- Moderator/Admin co the xem va xu ly report:
+  - GET /api/v1/moderation/reports
+  - PUT /api/v1/moderation/reports/{id}/decision
+- Trang thai report:
+  - Pending
+  - Accepted
+  - Rejected
+
+15. Kiem thu
+- Co test project:
+  - Nexa.Domain.Tests
+  - Nexa.Application.Tests
+  - Nexa.ArchitectureTests
+  - Nexa.IntegrationTests
+- Domain tests da pass.
+- Application tests da pass.
+- Architecture tests da pass.
+- Integration tests can Docker Desktop/Testcontainers PostgreSQL.
+
+16. Tai lieu va request mau
+- README.md co huong dan chay nhanh.
+- docs/Nexa.Platform-architecture.md mo ta kien truc.
+- docs/development.md mo ta phat trien va bootstrap admin.
+- docs/database.md mo ta database/migration.
+- docs/api.md mo ta endpoint va luong cookie/CSRF.
+- src/Nexa.Api/Nexa.Api.http co request mau de test bang HTTP client.
+
+17. Pham vi con lai / can cau hinh
+- OAuth dang nhap GitHub va hardening xac thuc nang cao duoc de sau.
+- Email/SMS verify va reset password dang co ma nguon, nhung delivery/yeu cau verify mac dinh tat; can nha cung cap business email va SMS truoc khi bat.
+- Outbox Development chi la mo phong trong bo nho, khong gui ra ngoai; phai bat rieng de test.
+- OpenSearch/Elasticsearch chi can khi quy mo PostgreSQL Full Text Search khong con dap ung.
+- Redis va worker tach rieng la huong mo rong van hanh; cac chuc nang API giai doan hien tai chay truc tiep trong Nexa.Api/PostgreSQL.
+- Production can cau hinh Data Protection key storage, HTTPS/domain, secrets, storage cloud, monitoring va CI/CD.
+- Thanh toan, VIP/subscription va marketplace duoc tam gac theo pham vi hien tai.
+
+16. Roadmap chuc nang can bo sung
+
+16.1. He thong quan ly noi dung nang cao
+- Article Revision:
+  - Da lam giai doan 1: luu lich su snapshot khi tao/sua/publish/archive.
+  - Da co API xem danh sach revision va xem chi tiet revision.
+  - Da co API compare diff va restore revision.
+- Autosave:
+  - Da co PUT /api/v1/me/articles/{id}/autosave cho Draft, tra version va thoi gian luu.
+- Metadata bai viet:
+  - Luot xem.
+  - So luot thich.
+  - So binh luan.
+  - So bookmark.
+  - So tu trong bai.
+  - Thoi gian doc du kien.
+  - Ngay xuat ban.
+  - Ngay cap nhat.
+- SEO bai viet:
+  - Da co GET/PUT /api/v1/me/articles/{id}/seo cho meta title, description, keywords va canonical URL.
+  - GET /api/v1/articles/{slug}/metadata tra cac truong SEO cho frontend public.
+  - Slug bai viet la URL chinh; canonicalUrl co the de trong de frontend dung URL mac dinh.
+
+16.2. He thong tim kiem
+- Tim bai viet.
+- Tim nguoi dung.
+- Tim tag.
+- Tim noi dung trong bai viet.
+- Giai doan dau dung PostgreSQL Full Text Search.
+- Da dung PostgreSQL FTS cho bai Published, co ranking relevance va GIN index.
+- Giai doan lon hon tich hop Elasticsearch hoac OpenSearch.
+
+16.3. He thong thong bao
+- Da lam giai doan 1:
+  - Tao notification cho like bai viet.
+  - Tao notification cho comment bai viet.
+  - Tao notification cho follow user.
+  - Xem danh sach thong bao.
+  - Dem thong bao chua doc.
+  - Danh dau da doc tung thong bao hoac tat ca.
+- Chua lam giai doan sau:
+  - Gui notification qua email/push.
+
+16.4. Mention @username
+- Da nhan dien mention trong comment va tao notification Mentioned.
+
+16.5. Tag nang cao
+- Da co thong ke bai Published va follower, danh sach tag pho bien va API tag trending theo 1-90 ngay.
+
+16.6. Follow Tag
+- Da co API follow/unfollow tag va danh sach tag dang theo doi.
+- Vi du: AI, .NET, Database, Docker.
+- Khi co bai Published moi thuoc tag dang theo doi thi notification TagPublished duoc tao.
+
+16.7. Report System
+- Nguoi dung co the bao cao bai viet, binh luan va nguoi dung.
+- Ly do bao cao:
+  - Spam.
+  - Noi dung khong phu hop.
+  - Sao chep noi dung.
+  - Vi pham quy dinh.
+- Quan tri vien co the xem, duyet, tu choi va xu ly bao cao.
+
+16.8. Audit Log
+- Luu lai hoat dong quan trong trong he thong.
+- Vi du:
+  - Admin xoa category.
+  - Moderator an bai viet.
+  - Thay doi quyen user.
+  - Khoa tai khoan.
+- Thong tin luu:
+  - Nguoi thuc hien.
+  - Hanh dong.
+  - Doi tuong tac dong.
+  - Thoi gian.
+  - IP.
+
+16.9. Media/File Service
+- Da co API upload anh JPG/PNG/WEBP/GIF toi da 5 MB va tai lieu PDF/TXT/CSV/DOCX/XLSX/PPTX toi da 25 MB.
+- Da co API list/delete media theo owner; local storage va metadata PostgreSQL.
+- Avatar/cover su dung URL media tu upload.
+- Thong tin luu:
+  - Ten file.
+  - Loai file.
+  - Dung luong.
+  - Nguoi so huu.
+  - Duong dan luu tru.
+- Giai doan dau dung Local Storage.
+- Production co the dung S3, MinIO hoac Azure Blob Storage.
+
+16.10. Ho so nguoi dung nang cao
+- Da ho tro avatar, cover image, bio, website, GitHub, LinkedIn, company, toi da 20 skills qua profile API.
+- Thong tin hien thi:
+  - So bai viet.
+  - So follower.
+  - So following.
+  - Diem dong gop.
+
+16.11. Reputation System
+- Da co API reputation public theo username va top contributors.
+- Diem tinh tu du lieu hien tai: bai Published +10, like nhan +1, comment nhan tren bai Published +2.
+- Level: Newbie, Contributor, Expert; diem khong luu rieng trong database.
+
+16.12. Cache System
+- Bo sung Redis.
+- Dung cho:
+  - Session.
+  - Article pho bien.
+  - Feed.
+  - Notification.
+  - Rate limit.
+- Huong kien truc: API -> Redis -> PostgreSQL.
+
+16.13. Background Worker
+- Tao them project Nexa.Worker.
+- Xu ly tac vu nen:
+  - Gui email.
+  - Tao notification.
+  - Xu ly anh.
+  - Dong bo tim kiem.
+  - Tinh thong ke.
+- Co the dung .NET BackgroundService hoac Hangfire.
+
+16.14. Domain Event va Event Driven
+- Bo sung co che su kien noi bo.
+- Vi du ArticlePublishedEvent.
+- Khi bai viet duoc publish, he thong co the:
+  - Cap nhat search index.
+  - Tao notification.
+  - Cap nhat thong ke.
+
+16.15. API Versioning nang cao
+- Hien co /api/v1.
+- Can bo sung co che quan ly version ro rang hon.
+- Vi du:
+  - /api/v1/articles
+  - /api/v2/articles
+- Muc tieu la thay doi API ma khong anh huong nguoi dung cu.
+
+16.16. Rate Limit nang cao
+- Hien moi gioi han dang ky va dang nhap.
+- Da them gioi han rieng cho thao tac ghi bai, comment, engagement, upload va review; search co policy rieng.
+- Co the phan cap theo goi:
+  - Member gioi han thap.
+  - VIP gioi han cao hon.
+
+16.17. Admin Portal
+- Da co giao dien admin va trung tam moderation cho Moderator/Admin.
+- Dashboard:
+  - Tong users, bai viet, luot xem, like, comment, bookmark, follow va bao cao.
+- Quan ly user:
+  - Xem/tim user, khoa/mo khoa, doi role, xem hoat dong.
+- Quan ly noi dung:
+  - Duyet bai nhap, xu ly report, quan ly taxonomy, gan/go bai noi bat va xem audit.
+- Doanh thu/Subscription tam hoan cung cac chuc nang thu tien.
+
+16.18. De xuat va xep hang bai viet
+- Da co public API featured/trending va API recommendations theo tac gia/tag dang theo doi, loai bai user da like/bookmark.
+- Moderator/Admin co API gan/go bai featured; moi thay doi duoc ghi audit log.
+
+16.19. Subscription/VIP
+- Chuan bi kien truc cho mo hinh tra phi.
+- Subscription Plan:
+  - Free.
+  - VIP thang.
+  - VIP nam.
+- Subscription:
+  - Nguoi dung.
+  - Goi dang ky.
+  - Thoi gian bat dau.
+  - Thoi gian ket thuc.
+  - Trang thai.
+- Payment:
+  - Giao dich.
+  - Nha cung cap thanh toan.
+  - Trang thai thanh toan.
+
+16.20. Production Deployment
+- Docker production.
+- CI/CD:
+  - Build tu dong.
+  - Test tu dong.
+  - Deploy tu dong.
+- Monitoring:
+  - Log tap trung.
+  - Theo doi loi.
+  - Theo doi hieu nang.
+- Cong cu goi y:
+  - Serilog.
+  - OpenTelemetry.
+  - Prometheus.
+  - Grafana.
+
+16.21. Article Review workflow
+- Tac gia gui bai Draft co noi dung va Article Version vao hang cho moderator; mot bai chi co mot yeu cau Pending.
+- Khi cho duyet, API chan sua/autosave/SEO/publish/archive/restore de dam bao moderator duyet dung version da nop.
+- Tac gia xem lich su trang thai va rut yeu cau Pending; tu choi giu bai Draft de tac gia sua va nop lai.
+- Moderator/Admin xem hang doi, mo bai qua API admin, va Approved/Rejected kem ghi chu.
+- Approved publish bai, tao ArticleRevision Published va thong bao follower trong cung SaveChanges transaction.
+- API: POST/GET /me/articles/{id}/reviews, DELETE /me/article-reviews/{reviewId}, GET /moderation/article-reviews, GET /moderation/article-reviews/{reviewId}, PUT /moderation/article-reviews/{reviewId}/decision.
+- Migration: AddArticleReviews; chay dotnet run --project src/Nexa.Api --launch-profile https -- --migrate de ap dung vao database.
+
+16.22. API xu huong, de xuat va bai noi bat
+- Public GET /api/v1/articles/featured va GET /api/v1/articles/trending?days=7; bai trending xep theo view va tuong tac trong cua so thoi gian.
+- GET /api/v1/me/recommendations danh cho user dang nhap, uu tien tac gia/tag theo doi va loai bai da like/bookmark.
+- Moderator/Admin co PUT/DELETE /api/v1/admin/articles/{id}/featured; chi bai Published, co audit log.
+- ArticleSummaryDto va ArticleDto tra IsFeatured.
+
+16.23. Media tai lieu va ho so nang cao
+- POST /api/v1/media/files upload PDF/TXT/CSV/DOCX/XLSX/PPTX local, toi da 25 MB; dung chung list/delete media hien co.
+- PUT /api/v1/me/profile ho tro coverImageUrl, GitHub, LinkedIn, company va skills (toi da 20); GET /me va public profile tra cac truong nay.
+- Migration: AddProfileAndEditorialFeatures.
+
+17. Thu tu phat trien de xuat
+1. Nexa.Web frontend.
+2. Media/File Service.
+3. Search System.
+4. Notification.
+5. Article Revision + Autosave.
+6. Admin Portal.
+7. Report va Moderation.
+8. Redis + Worker.
+9. Reputation System.
+10. VIP/Subscription.
+11. Marketplace.
+12. Production Deployment.

@@ -1,0 +1,152 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@plugin "@tailwindcss/typography";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  /* Modern Tech Aesthetic - Light Mode */
+  --background: oklch(0.985 0.005 247);
+  --foreground: oklch(0.18 0.03 260);
+  
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.18 0.03 260);
+  
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.18 0.03 260);
+  
+  /* Electric Purple / Indigo */
+  --primary: oklch(0.47 0.19 272);
+  --primary-foreground: oklch(0.99 0 0);
+  
+  --secondary: oklch(0.95 0.02 260);
+  --secondary-foreground: oklch(0.3 0.06 265);
+  
+  --muted: oklch(0.96 0.01 250);
+  --muted-foreground: oklch(0.38 0.025 260);
+  
+  --accent: oklch(0.94 0.03 268);
+  --accent-foreground: oklch(0.29 0.14 268);
+  
+  --destructive: oklch(0.50 0.20 25);
+  --border: oklch(0.91 0.01 255);
+  --input: oklch(0.91 0.01 255);
+  --ring: oklch(0.55 0.22 272);
+  
+  --radius: 0.75rem;
+
+  --sidebar: oklch(0.98 0.005 247);
+  --sidebar-foreground: oklch(0.18 0.03 260);
+  --sidebar-primary: oklch(0.55 0.22 272);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.95 0.02 260);
+  --sidebar-accent-foreground: oklch(0.3 0.06 265);
+  --sidebar-border: oklch(0.91 0.01 255);
+  --sidebar-ring: oklch(0.55 0.22 272);
+}
+
+.dark {
+  /* AI Product Design: Deep Dark Background #0B0F19 ~ #090D16 */
+  --background: oklch(0.11 0.025 255);
+  --foreground: oklch(0.98 0.01 255);
+  
+  --card: oklch(0.14 0.025 255 / 75%);
+  --card-foreground: oklch(0.98 0.01 255);
+  
+  --popover: oklch(0.13 0.025 255);
+  --popover-foreground: oklch(0.98 0.01 255);
+  
+  /* Vibrant Electric Violet */
+  --primary: oklch(0.68 0.24 285);
+  --primary-foreground: oklch(0.99 0 0);
+  
+  --secondary: oklch(0.18 0.03 260);
+  --secondary-foreground: oklch(0.95 0.01 260);
+  
+  --muted: oklch(0.17 0.025 255);
+  --muted-foreground: oklch(0.65 0.025 255);
+  
+  --accent: oklch(0.22 0.06 285);
+  --accent-foreground: oklch(0.95 0.05 285);
+  
+  --destructive: oklch(0.65 0.2 25);
+  --border: oklch(0.24 0.03 260 / 60%);
+  --input: oklch(0.22 0.03 260 / 70%);
+  --ring: oklch(0.72 0.2 200);
+  
+  --sidebar: oklch(0.12 0.025 255);
+  --sidebar-foreground: oklch(0.98 0.01 255);
+  --sidebar-primary: oklch(0.68 0.24 285);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.18 0.03 260);
+  --sidebar-accent-foreground: oklch(0.95 0.01 260);
+  --sidebar-border: oklch(0.24 0.03 260 / 60%);
+  --sidebar-ring: oklch(0.68 0.24 285);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground tracking-[-0.01em] antialiased selection:bg-primary/20 selection:text-primary;
+  }
+  html {
+    @apply font-sans scroll-smooth;
+  }
+}
+
+/* AI Product Design Visual Utilities */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+}
+
+.dark .glass-panel {
+  background: rgba(14, 19, 32, 0.55);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}

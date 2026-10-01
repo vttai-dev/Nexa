@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup><UserSecretsId>nexa-platform-development</UserSecretsId></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Nexa.Application/Nexa.Application.csproj" />
+    <ProjectReference Include="../Nexa.Infrastructure/Nexa.Infrastructure.csproj" />
+    <ProjectReference Include="../Nexa.Identity/Nexa.Identity.csproj" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

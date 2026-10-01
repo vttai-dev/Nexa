@@ -1,0 +1,89 @@
+@baseUrl = https://localhost:7210
+@csrfToken = paste-requestToken-here
+@csrfCookie = paste-csrf-cookie-value-here
+@sessionCookie = paste-session-cookie-value-here
+@articleId = 00000000-0000-0000-0000-000000000000
+@version = 00000000-0000-0000-0000-000000000000
+
+### Get CSRF token and copy __Host-Nexa.Csrf from Set-Cookie
+GET {{baseUrl}}/api/v1/auth/csrf
+
+### Register a local test member
+POST {{baseUrl}}/api/v1/auth/register
+Content-Type: application/json
+X-CSRF-TOKEN: {{csrfToken}}
+Cookie: __Host-Nexa.Csrf={{csrfCookie}}
+
+{
+  "userName": "nexa_demo",
+  "email": "demo@example.test",
+  "password": "Local-Demo-Password-123!",
+  "displayName": "Nexa Demo"
+}
+
+### Login and copy __Host-Nexa.Session from Set-Cookie
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/json
+X-CSRF-TOKEN: {{csrfToken}}
+Cookie: __Host-Nexa.Csrf={{csrfCookie}}
+
+{
+  "email": "demo@example.test",
+  "password": "Local-Demo-Password-123!"
+}
+
+### Refresh csrfToken after login
+GET {{baseUrl}}/api/v1/auth/csrf
+Cookie: __Host-Nexa.Csrf={{csrfCookie}}; __Host-Nexa.Session={{sessionCookie}}
+
+### My account
+GET {{baseUrl}}/api/v1/me
+Cookie: __Host-Nexa.Session={{sessionCookie}}
+
+### Create draft; copy id and version from response
+POST {{baseUrl}}/api/v1/articles
+Content-Type: application/json
+X-CSRF-TOKEN: {{csrfToken}}
+Cookie: __Host-Nexa.Csrf={{csrfCookie}}; __Host-Nexa.Session={{sessionCookie}}
+
+{
+  "title": "Bai viet dau tien",
+  "slug": "bai-viet-dau-tien",
+  "summary": "Khoi dau voi Nexa",
+  "bodyMarkdown": "# Nexa\nChia se kien thuc ky thuat.",
+  "categoryId": null,
+  "tagIds": []
+}
+
+### Publish with latest version
+POST {{baseUrl}}/api/v1/articles/{{articleId}}/publish
+Content-Type: application/json
+X-CSRF-TOKEN: {{csrfToken}}
+Cookie: __Host-Nexa.Csrf={{csrfCookie}}; __Host-Nexa.Session={{sessionCookie}}
+
+{ "version": "{{version}}" }
+
+### Public feed
+GET {{baseUrl}}/api/v1/articles?page=1&pageSize=20
+
+### Article metadata
+GET {{baseUrl}}/api/v1/articles/bai-viet-dau-tien/metadata
+
+### Record article view
+POST {{baseUrl}}/api/v1/articles/bai-viet-dau-tien/views
+X-CSRF-TOKEN: {{csrfToken}}
+Cookie: __Host-Nexa.Csrf={{csrfCookie}}
+
+### Search articles, users and tags
+GET {{baseUrl}}/api/v1/search?query=nexa&page=1&pageSize=10
+
+### Popular tags
+GET {{baseUrl}}/api/v1/tags/popular?page=1&pageSize=10
+
+### Like a published article
+PUT {{baseUrl}}/api/v1/articles/{{articleId}}/like
+X-CSRF-TOKEN: {{csrfToken}}
+Cookie: __Host-Nexa.Csrf={{csrfCookie}}; __Host-Nexa.Session={{sessionCookie}}
+
+### Health
+GET {{baseUrl}}/health/ready
